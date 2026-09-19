@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+._*
+
+# 编辑器 / IDE
+.idea/
+.vscode/
+*.swp
+
+# WorkBuddy 本地工作数据（不随代码发布）
+.workbuddy/
+
+# 临时文件
+*.log
+*.tmp

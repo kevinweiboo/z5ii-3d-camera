@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>曝光实验室 · 三维相机模拟器 | Nikon Z5II</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<script>
+/* 运行时错误兜底: 避免出问题时只看到黑屏 */
+(function () {
+  window.__err = [];
+  function show(msg) {
+    window.__err.push(String(msg));
+    document.title = 'ERR ' + window.__err.length + ': ' + String(msg).slice(0, 120);
+    var d = document.getElementById('errlog');
+    if (!d) return;
+    d.style.display = 'block';
+    var row = document.createElement('div');
+    row.textContent = String(msg);
+    d.appendChild(row);
+  }
+  window.addEventListener('error', function (e) {
+    show((e.message || 'error') + '  @' + String(e.filename || '').split('/').pop() + ':' + (e.lineno || 0));
+  });
+  window.addEventListener('unhandledrejection', function (e) { show('promise: ' + e.reason); });
+  window.__showErr = show;
+})();
+</script>
+
+<div class="app" id="app">
+
+  <!-- ================= 顶栏 ================= -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">Z5II</span>
+      <span class="sub">曝光实验室 · 三维相机模拟器</span>
+    </div>
+    <div class="preset-group" id="presets"></div>
+    <div class="spacer"></div>
+    <button class="toggle on" id="tg-handheld"><i class="dot"></i>手持</button>
+    <button class="toggle on" id="tg-vr"><i class="dot"></i>机身防抖</button>
+    <button class="toggle" id="tg-grid"><i class="dot"></i>构图网格</button>
+    <button class="toggle on" id="tg-film"><i class="dot"></i>胶片条</button>
+  </header>
+
+  <!-- ================= 取景器 ================= -->
+  <section class="viewfinder">
+    <canvas id="view"></canvas>
+    <div class="hud">
+      <div class="marks"></div>
+      <div class="gridlines" id="gridlines" style="display:none"><i></i><i></i><i></i><i></i></div>
+      <div class="focus-box" id="focus-box" data-label=""></div>
+
+      <div class="hud-top">
+        <div class="row">
+          <span>M</span><span><b id="hud-focal">50</b>mm</span>
+          <span>1/125</span><span>f/8</span>
+        </div>
+        <div class="badge" id="hud-scene">晴天户外 · EV 12.5</div>
+      </div>
+
+      <div class="hist-wrap">
+        <canvas id="hist" width="344" height="148"></canvas>
+        <div class="cap">
+          <span id="hist-note">直方图</span>
+          <span class="blink" id="hist-blink"></span>
+        </div>
+      </div>
+
+      <div class="meter">
+        <div class="title">曝光</div>
+        <div class="scale">
+          <div class="ticks" id="meter-ticks"></div>
+          <div class="zero"></div>
+          <div class="needle" id="needle"></div>
+        </div>
+        <div class="num" id="meter-num">0.0</div>
+        <div class="hint">EV</div>
+      </div>
+
+      <div class="settings-bar" id="settings-bar">
+        <div class="item" data-k="iso"><span class="k">ISO</span><span class="v" id="sv-iso">100</span></div>
+        <div class="item" data-k="ap"><span class="k">光圈</span><span class="v" id="sv-ap">f/8</span></div>
+        <div class="item" data-k="t"><span class="k">快门</span><span class="v" id="sv-t">1/125"</span></div>
+        <div class="item" data-k="focus"><span class="k">对焦</span><span class="v" id="sv-focus">3.0m</span></div>
+        <div class="item" data-k="dof"><span class="k">景深</span><span class="v" id="sv-dof">—</span></div>
+        <div class="item" data-k="noise"><span class="k">噪点</span><span class="v" id="sv-noise">—</span></div>
+      </div>
+
+      <button class="shutter-release" id="shutter-release">
+        <i class="ring"></i><span>快门</span>
+      </button>
+      <div class="flash" id="flash"></div>
+    </div>
+
+    <!-- 拍完的即时回放: 可滚轮/按钮缩放、按住拖动看细节, 也能手动关掉 -->
+    <div class="review" id="review">
+      <img id="review-img" alt="刚拍下的照片" draggable="false">
+      <div class="review-bar">
+        <button id="rv-out" title="缩小（快捷键 -）">−</button>
+        <span id="rv-level">100%</span>
+        <button id="rv-in" title="放大（快捷键 +）">＋</button>
+        <button id="rv-fit" title="回到适应大小（快捷键 0）">适应</button>
+        <span class="sep"></span>
+        <button id="rv-info" title="查看这一张的拍摄参数">详情</button>
+        <button id="rv-close" title="关闭预览（Esc）">×</button>
+      </div>
+      <div class="review-hint">滚轮缩放 · 按住拖动 · 双击复位</div>
+    </div>
+  </section>
+
+  <!-- ================= 右侧工作台 ================= -->
+  <aside class="rig">
+
+    <div class="card camcard">
+      <canvas id="cam3d"></canvas>
+      <div id="tags3d"></div>
+      <div class="cam-hint">拖动相机可环绕观察 · 直接拖动拨盘/镜头环调节参数</div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><span>机身控制</span><span class="tag">Z 24-120mm f/4 S</span></div>
+      <div class="sliders">
+        <div class="sl">
+          <span class="name">ISO</span>
+          <input type="range" id="sl-iso" min="0" max="28" step="1" value="0">
+          <span class="val" id="sl-iso-v">100</span>
+        </div>
+        <div class="sl">
+          <span class="name">光圈</span>
+          <input type="range" id="sl-ap" min="0" max="15" step="1" value="6">
+          <span class="val" id="sl-ap-v">f/8</span>
+        </div>
+        <div class="sl">
+          <span class="name">快门</span>
+          <input type="range" id="sl-t" min="0" max="53" step="1" value="18">
+          <span class="val" id="sl-t-v">1/125"</span>
+          <span class="note" id="sl-t-note"></span>
+        </div>
+        <div class="sl">
+          <span class="name">焦距</span>
+          <input type="range" id="sl-focal" min="24" max="120" step="1" value="50">
+          <span class="val" id="sl-focal-v">50mm</span>
+        </div>
+        <div class="sl">
+          <span class="name">对焦</span>
+          <input type="range" id="sl-focus" min="0" max="100" step="0.5" value="30">
+          <span class="val" id="sl-focus-v">3.0m</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card learn">
+      <div class="hd"><span>诊断与学习</span><span class="tag" id="learn-tag">M 模式</span></div>
+      <div class="body" id="learn-body"></div>
+    </div>
+
+  </aside>
+
+  <!-- ================= 胶片条 ================= -->
+  <div class="film" id="film">
+    <div class="label">胶卷</div>
+    <div class="strip" id="strip"><span class="empty">按下快门按钮（或空格键）拍下当前画面：成片会立刻在取景器里回放，可缩放细看、也可点 × 手动关闭，并留在这条胶卷上供回看。只在本次会话里预览，不会存到本地。</span></div>
+  </div>
+
+</div>
+
+<div class="lightbox" id="lightbox">
+  <button class="close" id="lb-close">×</button>
+  <div class="lb-stage" id="lb-stage"><img id="lb-img" alt="成片" draggable="false"></div>
+  <div class="info" id="lb-info"></div>
+  <div class="acts">
+    <div class="zoom">
+      <button id="lb-out" title="缩小">−</button><span id="lb-level">100%</span><button id="lb-in" title="放大">＋</button>
+    </div>
+    <span class="note">仅在页面内预览 · 不会保存到本地</span>
+    <button id="lb-del">删除这张</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="errlog" id="errlog"></div>
+
+<script src="vendor/three.min.js"></script>
+<script src="js/optics.js"></script>
+<script src="js/scene.js"></script>
+<script src="js/pipe.js"></script>
+<script src="js/cam3d.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
