@@ -506,3 +506,62 @@ button { font-family: inherit; color: inherit; cursor: pointer; border: none; ba
   .settings-bar .item { padding: 0 10px; min-width: 68px; }
   .settings-bar .v { font-size: 16px; }
 }
+
+/* ---------------- 窄屏 / 手机：单列纵向堆叠 ----------------
+   原布局在 1180px 以下没有任何断点。手机上 340px 的右栏会把取景器那一列
+   挤成一条细缝（甚至宽度归零），画布因此拿不到尺寸 → 3D 画面全黑。
+   这里把布局改成上下堆叠，并给取景器一个确定的高度。 */
+@media (max-width: 900px) {
+  .app {
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto;
+    gap: 8px;
+    padding: 8px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .app.film-hidden { grid-template-rows: auto auto auto 0px; }
+
+  /* 顶栏改为可换行，预设按钮不再溢出到屏幕外 */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .brand { width: 100%; }
+  .spacer { display: none; }
+
+  .preset-group {
+    order: 1;
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .preset { padding: 6px 12px; font-size: 12.5px; }
+  .toggle { flex: 0 0 auto; padding: 6px 10px; }
+
+  /* 关键：给取景器确定的高度，不再依赖 grid 的 1fr 分配 */
+  .viewfinder {
+    grid-column: 1;
+    height: 58vw;
+    min-height: 200px;
+    max-height: 62vh;
+  }
+
+  /* 右栏不再内部滚动，跟随整页滚动，避免被截断看不到内容 */
+  .rig {
+    grid-column: 1;
+    overflow: visible;
+    max-height: none;
+  }
+
+  .film {
+    grid-column: 1;
+    min-height: 116px;
+  }
+
+  /* 触屏没有 hover —— 删除按钮必须常显，否则手机上永远点不到 */
+  .shot .del { opacity: 1; }
+}

@@ -91,9 +91,14 @@
   function resize() {
     if (!vf) return;
     const r = vf.getBoundingClientRect();
-    if (r.width < 4 || r.height < 4) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    let w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+    // 取景器还量不出尺寸时（布局未就绪、或被窄屏挤成 0 宽）不能直接 return ——
+    // 一旦 return，PIPE 的渲染目标就永远不会创建，主循环会拿 undefined 去
+    // setRenderTarget() 并每帧报错，画面全黑。这里退到一个能跑起来的保守尺寸，
+    // 等布局就绪后 ResizeObserver 会再纠正为真实尺寸。
+    const laidOut = r.width >= 4 && r.height >= 4;
+    let w = Math.round((laidOut ? r.width : 640) * dpr);
+    let h = Math.round((laidOut ? r.height : 360) * dpr);
     const k = Math.min(1, MAXW / w, MAXH / h);
     w = Math.max(320, Math.round(w * k));
     h = Math.max(200, Math.round(h * k));
@@ -123,11 +128,29 @@
 
   /* ---------------- 主循环 ---------------- */
   let accFrames = 0, accTime = 0, fps = 60;
+  let renderErrors = 0;
 
   function loop(ms) {
     if (!ready) return;
     requestAnimationFrame(loop);
+    // 单帧异常不应该演变成「永久黑屏 + 每帧刷报错」。连续失败几次就停下来，
+    // 并且把原因显示给用户，而不是让他对着一块黑屏猜。
+    try {
+      renderFrame(ms);
+      renderErrors = 0;
+    } catch (err) {
+      renderErrors++;
+      if (renderErrors === 1) console.error('[3D相机] 渲染出错：', err);
+      if (renderErrors >= 3) {
+        ready = false;
+        const msg = (err && err.message) ? err.message : String(err);
+        window.UI.toast('渲染中断：' + msg +
+          '<br>刷新页面可重试；若持续出现，请换用 Chrome / Edge / Safari 最新版打开。', 9000);
+      }
+    }
+  }
 
+  function renderFrame(ms) {
     const dt = Math.min(0.1, (ms - lastMs) / 1000) || 0.016;
     lastMs = ms;
     accFrames++; accTime += dt;

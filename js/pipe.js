@@ -206,6 +206,15 @@ window.PIPE = (function () {
 
     histoBuf = new Uint8Array(128 * 72 * 4);
     rtHisto = new T.WebGLRenderTarget(128, 72, { type: T.UnsignedByteType });
+
+    // 强制按当前 W/H 建一次渲染目标。
+    // setSize 的提前返回只在「尺寸真的没变」时才安全，但模块初值 W=1280,H=720
+    // 从未真正建过 RT —— 不在这里强制建一次，主循环就会拿 undefined 去
+    // setRenderTarget()，而 three.js 的 setRenderTarget(t) 没有默认值，
+    // 会让内部状态变成 undefined，随后抛
+    // "Cannot read properties of undefined (reading 'isXRRenderTarget')"，
+    // 表现为取景器全黑 + 每帧一条报错。
+    setSize(W, H, true);
   }
 
   function makeBlur(taps, maxR, highlight) {
@@ -249,10 +258,12 @@ window.PIPE = (function () {
   }
 
   /* ---------- 尺寸 ---------- */
-  function setSize(w, h) {
+  function setSize(w, h, force) {
     w = Math.max(2, Math.floor(w));
     h = Math.max(2, Math.floor(h));
-    if (w === W && h === H) return;
+    // 三个条件缺一不可：force 未指定时，还要确认 rtScene 真的存在过。
+    // 只看「尺寸没变」是不够的 —— 初值会命中它而 RT 从未创建。
+    if (!force && w === W && h === H && rtScene) return;
     W = w; H = h;
     const hw = Math.max(2, Math.floor(W * 0.5)), hh = Math.max(2, Math.floor(H * 0.5));
     const qw = Math.max(2, Math.floor(W * QUAD_SCALE)), qh = Math.max(2, Math.floor(H * QUAD_SCALE));
@@ -292,6 +303,9 @@ window.PIPE = (function () {
   //      optics:{ fov, focal, fNum, focus, exposure, grain, chroma, ca, vig, blade },
   //      shakeAmp, seed, trail }
   function render(p) {
+    // 兜底：渲染目标缺失时立刻补建，避免把 undefined 漏进 setRenderTarget()
+    if (!rtScene || !rtAccum) setSize(W, H, true);
+
     const cam = p.camera;
     const n = Math.max(1, p.samples | 0);
     const inv = 1 / n;
@@ -388,7 +402,10 @@ window.PIPE = (function () {
     applyCommon(mat, dw);
     applyBlade(mat, o);
     quadMesh.material = mat;
-    renderer.setRenderTarget(target);
+    // 与 blit() 保持一致：target 为 undefined 时兜底成 null。
+    // three.js 的 setRenderTarget(t) 没有参数默认值，传 undefined 会让它
+    // 内部把 undefined 当成"当前渲染目标"，后续读 .isXRRenderTarget 直接抛错。
+    renderer.setRenderTarget(target || null);
     renderer.render(quadScene, quadCam);
   }
 
